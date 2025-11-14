@@ -1,0 +1,25 @@
+<table class="table table-bordered">
+  <tr class="table-dark">
+    <th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Actions</th>
+  </tr>
+  {% for p in products %}
+  <tr>
+    <td>
+      {% if p.image %}
+      <img src="{{ url_for('static', filename='uploads/' ~ p.image) }}" width="80">
+      {% else %}
+      No image
+      {% endif %}
+    </td>
+    <td>{{ p.name }}</td>
+    <td>{{ p.category }}</td>
+    <td>₹{{ p.price }}</td>
+    <td>{{ p.quantity }}</td>
+    <td>
+      {% if session['role'] == 'owner' %}
+      <a href="{{ url_for('delete_product', product_id=p.product_id) }}" class="btn btn-danger btn-sm">Delete</a>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
