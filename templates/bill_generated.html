@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+
+{% block title %}Bill Generated{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card p-4 text-center">
+      <h2 class="fw-semibold mb-3">🧾 Customer Bill</h2>
+      <p class="text-muted mb-4">Share this summary with the customer.</p>
+
+      <div class="text-start mb-3">
+        <p><strong>Product:</strong> {{ product.name }}</p>
+        <p><strong>Unit Price:</strong> ₹{{ '%.2f'|format(product.price|float) }}</p>
+        <p><strong>Quantity:</strong> {{ qty }}</p>
+        <hr>
+        <p class="fs-4 fw-bold">Total: ₹{{ '%.2f'|format(total|float) }}</p>
+      </div>
+
+      <div class="d-flex gap-2 justify-content-center">
+        <a href="{{ url_for('billing') }}" class="btn btn-outline-secondary">New Bill</a>
+        <a href="{{ url_for('customer_dashboard') }}" class="btn btn-primary">Back to Dashboard</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

@@ -1,180 +1,286 @@
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    session,
+    flash,
+    Response,
+)
 import mysql.connector
 import os
 from werkzeug.utils import secure_filename
+from functools import wraps
+from uuid import uuid4
+import csv
+import io
 
-# ✅ Initialize Flask
+
 app = Flask(__name__)
-app.secret_key = "supersecretkey"
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "supersecretkey")
+app.config["UPLOAD_FOLDER"] = os.path.join(app.root_path, "static", "uploads")
+os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-# ✅ Configure Upload Folder
-UPLOAD_FOLDER = os.path.join("static", "uploads")
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # create folder if not exists
+DB_CONFIG = {
+    "host": os.environ.get("DB_HOST", "localhost"),
+    "user": os.environ.get("DB_USER", "root"),
+    "password": os.environ.get("DB_PASSWORD", "h@rsh5478"),
+    "database": os.environ.get("DB_NAME", "inventory_db"),
+}
 
 
-# ✅ Initialize App
-app = Flask(__name__)
-app.secret_key = "supersecretkey"   # session key
+def get_db_connection():
+    return mysql.connector.connect(**DB_CONFIG)
 
-# ✅ MySQL Connection
-db = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="h@rsh5478",
-    database="inventory_db"
-)
-cursor = db.cursor(dictionary=True)
 
-# 🟢 Login
-@app.route('/login', methods=['GET', 'POST'])
+def fetch_all(query, params=()):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(query, params)
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return results
+
+
+def fetch_one(query, params=()):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(query, params)
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return result
+
+
+def execute(query, params=()):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(query, params)
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+def login_required(role=None):
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if "user_id" not in session:
+                flash("Please log in to continue.", "warning")
+                return redirect(url_for("login"))
+            if role and session.get("role") != role:
+                flash("You are not authorized to access that page.", "danger")
+                return redirect(url_for("home"))
+            return view(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+def save_image(file_storage):
+    if not file_storage or file_storage.filename == "":
+        return None
+    filename = f"{uuid4().hex}_{secure_filename(file_storage.filename)}"
+    file_storage.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+    return filename
+
+
+def delete_image(filename):
+    if not filename:
+        return
+    path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+    if os.path.exists(path):
+        os.remove(path)
+
+
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == 'POST':
-        username = request.form['username'].strip()  # remove spaces
-        password = request.form['password'].strip()
+    if request.method == "POST":
+        username = request.form["username"].strip()
+        password = request.form["password"].strip()
 
-        cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
-        user = cursor.fetchone()
-
-        print("DEBUG → Username entered:", username)
-        print("DEBUG → User fetched from DB:", user)
+        user = fetch_one("SELECT * FROM users WHERE username = %s", (username,))
 
         if not user:
-            return "❌ Username not found in DB"
+            flash("Username not found.", "danger")
+            return redirect(url_for("login"))
 
-        if password == user['password']:
-            session['user_id'] = user['user_id']
-            session['role'] = user['role']
-            return redirect(url_for('owner_dashboard' if user['role'] == 'owner' else 'customer_dashboard'))
-        else:
-            return "❌ Password is wrong"
+        if password != user["password"]:
+            flash("Password is incorrect.", "danger")
+            return redirect(url_for("login"))
 
-    return render_template('login.html')
+        session["user_id"] = user["user_id"]
+        session["role"] = user["role"]
+        flash("Welcome back!", "success")
+
+        return redirect(
+            url_for("owner_dashboard" if user["role"] == "owner" else "customer_dashboard")
+        )
+
+    return render_template("login.html")
 
 
-
-# 🟢 Logout
-@app.route('/logout')
+@app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    flash("You have been logged out.", "info")
+    return redirect(url_for("login"))
 
-# 🟢 Owner Dashboard
-@app.route('/owner')
-def owner_dashboard():
-    if 'role' not in session or session['role'] != 'owner':
-        return redirect(url_for('login'))
-    return render_template('owner_dashboard.html')
 
-# 🟢 Customer Dashboard
-@app.route('/customer')
-def customer_dashboard():
-    if 'role' not in session or session['role'] != 'customer':
-        return redirect(url_for('login'))
-    return render_template('customer_dashboard.html')
-
-# 🟢 View Products (both roles)
-@app.route('/')
+@app.route("/")
+@login_required()
 def home():
-    if 'user_id' not in session:   # if user not logged in
-        return redirect(url_for('login'))
-    cursor.execute("SELECT * FROM products")
-    products = cursor.fetchall()
-    return render_template('index.html', products=products)
+    products = fetch_all("SELECT * FROM products ORDER BY product_id DESC")
+    return render_template("index.html", products=products)
 
-# 🟢 Add Product (Owner only)
-@app.route('/add-product', methods=['GET', 'POST'])
+
+@app.route("/owner")
+@login_required("owner")
+def owner_dashboard():
+    return render_template("owner_dashboard.html")
+
+
+@app.route("/customer")
+@login_required("customer")
+def customer_dashboard():
+    return render_template("customer_dashboard.html")
+
+
+@app.route("/add-product", methods=["GET", "POST"])
+@login_required("owner")
 def add_product():
-    if 'role' not in session or session['role'] != 'owner':
-        return "❌ Access denied"
+    if request.method == "POST":
+        name = request.form["name"].strip()
+        category = request.form.get("category", "").strip()
+        description = request.form.get("description", "").strip()
+        price = request.form["price"]
+        quantity = request.form["quantity"]
 
-    if request.method == 'POST':
-        name = request.form['name']
-        category = request.form['category']
-        description = request.form['description']
-        price = request.form['price']
-        quantity = request.form['quantity']
+        image_name = save_image(request.files.get("image"))
 
-        # ✅ Handle image upload safely
-        image_name = None
-        if 'image' in request.files:  # check if file field exists
-            image_file = request.files['image']
-            if image_file and image_file.filename != '':
-                image_name = secure_filename(image_file.filename)
-                save_path = os.path.join(app.config["UPLOAD_FOLDER"], image_name)
-                image_file.save(save_path)
-
-        # ✅ Insert into database
-        cursor.execute(
-            "INSERT INTO products (name, category, description, price, quantity, image) VALUES (%s, %s, %s, %s, %s, %s)",
-            (name, category, description, price, quantity, image_name)
+        execute(
+            """
+            INSERT INTO products (name, category, description, price, quantity, image)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """,
+            (name, category, description, price, quantity, image_name),
         )
-        db.commit()
 
-        return redirect(url_for('owner_dashboard'))
+        flash("Product added successfully.", "success")
+        return redirect(url_for("home"))
 
-    return render_template('add_product.html')
+    return render_template("add_product.html")
 
 
-@app.route('/delete-product/<int:product_id>')
+@app.route("/delete-product/<int:product_id>", methods=["POST"])
+@login_required("owner")
 def delete_product(product_id):
-    if 'role' not in session or session['role'] != 'owner':
-        return "❌ Access denied"
+    product = fetch_one("SELECT image FROM products WHERE product_id = %s", (product_id,))
+    execute("DELETE FROM products WHERE product_id = %s", (product_id,))
+    if product and product.get("image"):
+        delete_image(product["image"])
+    flash("Product removed.", "info")
+    return redirect(url_for("home"))
 
-    cursor.execute("DELETE FROM products WHERE product_id = %s", (product_id,))
-    db.commit()
-    return redirect(url_for('home'))
+
+@app.route("/inventory")
+@login_required("owner")
+def inventory():
+    items = fetch_all("SELECT * FROM products ORDER BY name ASC")
+    return render_template("inventory.html", inventory=items)
 
 
-# 🟢 Billing (Customer)
-@app.route('/billing', methods=['GET', 'POST'])
+@app.route("/billing", methods=["GET", "POST"])
+@login_required("customer")
 def billing():
-    if 'role' not in session or session['role'] != 'customer':
-        return redirect(url_for('login'))
+    products = fetch_all("SELECT * FROM products ORDER BY name ASC")
 
-    if request.method == 'POST':
-        pid = request.form['product_id']
-        qty = int(request.form['quantity'])
+    if request.method == "POST":
+        product_id = int(request.form["product_id"])
+        quantity = int(request.form["quantity"])
 
-        cursor.execute("SELECT * FROM products WHERE product_id = %s", (pid,))
-        product = cursor.fetchone()
+        product = fetch_one("SELECT * FROM products WHERE product_id = %s", (product_id,))
 
         if not product:
-            return "❌ Product not found"
-        if qty > product['quantity']:
-            return f"❌ Only {product['quantity']} available"
+            flash("Product not found.", "danger")
+            return redirect(url_for("billing"))
 
-        total = float(product['price']) * qty
+        if quantity <= 0:
+            flash("Quantity must be at least 1.", "warning")
+            return redirect(url_for("billing"))
 
-        # Update stock
-        cursor.execute("UPDATE products SET quantity = quantity - %s WHERE product_id=%s", (qty, pid))
+        if quantity > product["quantity"]:
+            flash(f"Only {product['quantity']} items available.", "warning")
+            return redirect(url_for("billing"))
 
-        # Record sale
-        cursor.execute("INSERT INTO sales (product_id, quantity_sold, total_price) VALUES (%s, %s, %s)",
-                       (pid, qty, total))
-        db.commit()
+        total = float(product["price"]) * quantity
 
-        return render_template('bill_generated.html', product=product, qty=qty, total=total)
+        execute(
+            "UPDATE products SET quantity = quantity - %s WHERE product_id = %s",
+            (quantity, product_id),
+        )
+        execute(
+            "INSERT INTO sales (product_id, quantity_sold, total_price) VALUES (%s, %s, %s)",
+            (product_id, quantity, total),
+        )
 
-    # GET request → show billing form
-    cursor.execute("SELECT * FROM products")
-    products = cursor.fetchall()
-    return render_template('billing.html', products=products)
-     
-# 🟢 Owner: View Sales History
-@app.route('/sales-history')
+        product["quantity"] -= quantity
+
+        return render_template("bill_generated.html", product=product, qty=quantity, total=total)
+
+    return render_template("billing.html", products=products)
+
+
+@app.route("/sales-history")
+@login_required("owner")
 def sales_history():
-    if 'role' not in session or session['role'] != 'owner':
-        return redirect(url_for('login'))
-
-    cursor.execute("""
+    sales = fetch_all(
+        """
         SELECT s.sale_id, p.name AS product_name, s.quantity_sold, s.total_price, s.sale_date
         FROM sales s
         JOIN products p ON s.product_id = p.product_id
         ORDER BY s.sale_date DESC
-    """)
-    sales = cursor.fetchall()
-    return render_template('sales_history.html', sales=sales)
+    """
+    )
+    return render_template("sales_history.html", sales=sales)
 
-if __name__ == '__main__':
+
+@app.route("/export-sales")
+@login_required("owner")
+def export_sales():
+    sales = fetch_all(
+        """
+        SELECT s.sale_id, p.name AS product_name, s.quantity_sold, s.total_price, s.sale_date
+        FROM sales s
+        JOIN products p ON s.product_id = p.product_id
+        ORDER BY s.sale_date DESC
+    """
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Sale ID", "Product", "Quantity", "Total Price", "Sale Date"])
+    for sale in sales:
+        writer.writerow(
+            [
+                sale["sale_id"],
+                sale["product_name"],
+                sale["quantity_sold"],
+                sale["total_price"],
+                sale["sale_date"],
+            ]
+        )
+
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=sales_history.csv"},
+    )
+
+
+if __name__ == "__main__":
     app.run(debug=True)

@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import mysql.connector
 from sklearn.linear_model import LinearRegression
@@ -7,17 +8,17 @@ import csv
 # Connect to MySQL
 def connect_db():
     return mysql.connector.connect(
-        host="localhost",
-        user="root",  # 🔁 Replace with your actual username
-        password="h@rsh5478",  # 🔁 Replace with your actual password
-        database="inventory_db"
+        host=os.environ.get("DB_HOST", "localhost"),
+        user=os.environ.get("DB_USER", "root"),
+        password=os.environ.get("DB_PASSWORD", "h@rsh5478"),
+        database=os.environ.get("DB_NAME", "inventory_db"),
     )
 
 # 1️⃣ Export sales data to CSV
 def export_sales_to_csv(file_path='sales_data.csv'):
     db = connect_db()
     cursor = db.cursor()
-    cursor.execute("SELECT product_id, quantity, total_price, sale_time FROM sales")
+    cursor.execute("SELECT product_id, quantity_sold, total_price, sale_date FROM sales")
     rows = cursor.fetchall()
 
     with open(file_path, 'w', newline='') as f:
@@ -32,7 +33,7 @@ def export_sales_to_csv(file_path='sales_data.csv'):
 def forecast_demand(product_id, future_days=7):
     db = connect_db()
     query = """
-    SELECT DAY(sale_time), quantity FROM sales
+    SELECT DATE(sale_date), quantity_sold FROM sales
     WHERE product_id = %s
     ORDER BY sale_time ASC
     """
@@ -42,8 +43,9 @@ def forecast_demand(product_id, future_days=7):
     if df.empty:
         return "❌ No sales data available for this product."
 
-    X = df.iloc[:, 0].values.reshape(-1, 1)  # Days
-    y = df['quantity'].values  # Quantities
+    df['day_index'] = range(1, len(df) + 1)
+    X = df[['day_index']].values
+    y = df['quantity_sold'].values  # Quantities
 
     model = LinearRegression()
     model.fit(X, y)
@@ -59,7 +61,7 @@ def recommend_top_products(limit=5):
     db = connect_db()
     cursor = db.cursor()
     query = """
-    SELECT p.name, SUM(s.quantity) as total_sold
+    SELECT p.name, SUM(s.quantity_sold) as total_sold
     FROM sales s
     JOIN products p ON s.product_id = p.product_id
     GROUP BY s.product_id

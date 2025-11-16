@@ -34,7 +34,7 @@ Before you begin, ensure you have the following installed:
 ### 1. Clone the Repository
 ```bash
 git clone https://github.com/harshal5478/ims.git
-cd ims
+cd ims  # Note: Repository name is 'ims' but project is 'Inventory Management System'
 ```
 
 ### 2. Install Python Dependencies

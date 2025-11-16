@@ -1,25 +1,74 @@
-<table class="table table-bordered">
-  <tr class="table-dark">
-    <th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Actions</th>
-  </tr>
-  {% for p in products %}
-  <tr>
-    <td>
-      {% if p.image %}
-      <img src="{{ url_for('static', filename='uploads/' ~ p.image) }}" width="80">
-      {% else %}
-      No image
-      {% endif %}
-    </td>
-    <td>{{ p.name }}</td>
-    <td>{{ p.category }}</td>
-    <td>₹{{ p.price }}</td>
-    <td>{{ p.quantity }}</td>
-    <td>
-      {% if session['role'] == 'owner' %}
-      <a href="{{ url_for('delete_product', product_id=p.product_id) }}" class="btn btn-danger btn-sm">Delete</a>
-      {% endif %}
-    </td>
-  </tr>
-  {% endfor %}
-</table>
+{% extends 'base.html' %}
+
+{% block title %}Products{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+  <div>
+    <h2 class="fw-semibold mb-1">Product Catalog</h2>
+    <p class="text-muted mb-0">Track availability, pricing, and manage inventory effortlessly.</p>
+  </div>
+  <div class="d-flex gap-2">
+    {% if session.get('role') == 'owner' %}
+      <a href="{{ url_for('add_product') }}" class="btn btn-primary">➕ Add Product</a>
+      <a href="{{ url_for('owner_dashboard') }}" class="btn btn-outline-secondary">Dashboard</a>
+    {% elif session.get('role') == 'customer' %}
+      <a href="{{ url_for('billing') }}" class="btn btn-success">🧾 Billing</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if products %}
+  <div class="table-responsive table-card">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th scope="col">Image</th>
+          <th scope="col">Name</th>
+          <th scope="col">Category</th>
+          <th scope="col">Price</th>
+          <th scope="col">In Stock</th>
+          {% if session.get('role') == 'owner' %}
+            <th scope="col" class="text-end">Actions</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in products %}
+        <tr>
+          <td>
+            {% if p.image %}
+              <img src="{{ url_for('static', filename='uploads/' ~ p.image) }}" alt="{{ p.name }}" class="img-thumbnail" style="width:80px; height:80px; object-fit:cover;">
+            {% else %}
+              <span class="text-muted">No image</span>
+            {% endif %}
+          </td>
+          <td class="fw-semibold">{{ p.name }}</td>
+          <td>{{ p.category or '—' }}</td>
+          <td>₹{{ '%.2f'|format(p.price|float) }}</td>
+          <td>
+            {% if p.quantity > 0 %}
+              <span class="badge bg-success-subtle text-success">{{ p.quantity }}</span>
+            {% else %}
+              <span class="badge bg-danger">Out</span>
+            {% endif %}
+          </td>
+          {% if session.get('role') == 'owner' %}
+          <td class="text-end">
+            <form method="POST" action="{{ url_for('delete_product', product_id=p.product_id) }}" onsubmit="return confirm('Delete {{ p.name }}?');">
+              <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="empty-state">
+    <h5 class="fw-semibold mb-2">No products yet</h5>
+    <p class="mb-0">Start by adding your first product to populate the catalog.</p>
+  </div>
+{% endif %}
+{% endblock %}

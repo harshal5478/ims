@@ -1,15 +1,29 @@
-<form method="POST">
-  <div class="mb-3">
-    <label>Product</label>
-    <select name="product_id" class="form-select" required>
-      {% for p in products %}
-      <option value="{{ p.product_id }}">{{ p.name }} - ₹{{ p.price }}</option>
-      {% endfor %}
-    </select>
+{% extends 'base.html' %}
+
+{% block title %}Billing{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h3 class="mb-3 text-center">Generate Bill</h3>
+      <form method="POST">
+        <div class="mb-3">
+          <label class="form-label">Product</label>
+          <select name="product_id" class="form-select" required>
+            <option value="" disabled selected>Select a product</option>
+            {% for p in products %}
+              <option value="{{ p.product_id }}">{{ p.name }} — ₹{{ '%.2f'|format(p.price|float) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Quantity</label>
+          <input type="number" class="form-control" name="quantity" min="1" required>
+        </div>
+        <button type="submit" class="btn-gradient w-100">Create Bill</button>
+      </form>
+    </div>
   </div>
-  <div class="mb-3">
-    <label>Quantity</label>
-    <input type="number" class="form-control" name="quantity" required>
-  </div>
-  <button type="submit" class="btn btn-success">Generate Bill</button>
-</form>
+</div>
+{% endblock %}
