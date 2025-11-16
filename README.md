@@ -237,5 +237,5 @@ For support, open an issue on GitHub or contact the repository owner.
 
 ---
 
-**Made with ❤️ using Flask and MySQL**
+**Made by using Cursor**
 
